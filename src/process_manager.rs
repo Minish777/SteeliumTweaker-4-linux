@@ -51,8 +51,8 @@ impl ProcessManager {
     pub fn get_process_list(&mut self) -> Vec<LinuxProcessItem> {
         let mut result = Vec::new();
         for (pid, process) in self.sys.processes() {
-            let name_str = process.name().to_string_lossy();
-            if self.hardcoded_exclusions.contains(name_str.as_ref()) {
+            let name_str = process.name().to_string();
+            if self.hardcoded_exclusions.contains(name_str.as_str()) {
                 continue;
             }
 
@@ -60,13 +60,13 @@ impl ProcessManager {
             let cmdline = process
                 .cmd()
                 .iter()
-                .map(|s| s.to_string_lossy().into_owned())
+                .map(|s| s.to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
 
             result.push(LinuxProcessItem {
                 pid: pid.as_u32(),
-                name: name_str.into_owned(),
+                name: name_str,
                 cmdline,
                 memory_bytes,
                 memory_formatted: format!("{} MB", memory_bytes / 1024 / 1024),
