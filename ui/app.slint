@@ -1,0 +1,296 @@
+import { Button, ScrollView } from "std-widgets.slint";
+
+component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback clicked;
+
+    height: 38px;
+    background: active ? #ffffff0c : transparent;
+    border-radius: 5px;
+
+    TouchArea { clicked => { root.clicked(); } }
+
+    Text {
+        x: 16px;
+        text: root.text;
+        color: active ? #ffffff : #b0b0b8;
+        font-size: 13px;
+        vertical-alignment: center;
+    }
+}
+
+component TweakCard inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+    in-out property <bool> checked;
+    callback toggled(bool);
+
+    background: #1b1926;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: #ffffff05;
+    height: 54px;
+
+    HorizontalLayout {
+        padding-left: 16px; padding-right: 16px;
+
+        VerticalLayout {
+            alignment: center;
+            Text { text: root.title; color: #ffffff; font-size: 13px; }
+            if (root.description != "") : Text { text: root.description; color: #757380; font-size: 11px; }
+        }
+    }
+}
+
+export struct ProcessItem {
+    pid: int,
+    name: string,
+    cpu: string,
+    memory: string,
+}
+
+export struct FlatpakItem {
+    id: string,
+    name: string,
+    version: string,
+}
+
+export component AppWindow inherits Window {
+    title: "MakuTweaker 4 (Linux)";
+    width: 960px;
+    height: 600px;
+    background: #0b090f;
+
+    // ==========================================
+    // СВОЙСТВА И КОЛБЭКИ ДЛЯ СВЯЗИ С RUST (src/main.rs)
+    // ==========================================
+
+    // Информация о системе (Rust вызывает set_cpu_info, set_ram_summary и т.д.)
+    in-out property <string> cpu-info: "";
+    in-out property <int> cpu-cores: 0;
+    in-out property <string> cpu-freq: "";
+    in-out property <string> ram-summary: "";
+
+    // Информация о программе ("О программе")
+    in-out property <string> about-version: "1.0.0";
+    in-out property <string> about-credits: "";
+
+    // Состояние твиков
+    in-out property <bool> winr-alias-active: false;
+    in-out property <bool> has-battery: false;
+    in-out property <bool> telemetry-disabled: false;
+    in-out property <bool> photo-viewer-applied: false;
+    in-out property <bool> game-dvr-disabled: false;
+    in-out property <bool> updates-blocked: false;
+    in-out property <int> visible-tweaks-count: 0;
+    in-out property <bool> update-cache-cleaned: false;
+
+    // Списки для Диспетчера задач и Flatpak
+    in-out property <[ProcessItem]> process-list: [];
+    in-out property <[FlatpakItem]> package-list: [];
+
+    // Колбэки (Rust подписывается через ui.on_...)
+    callback apply-makuos-preset();
+    callback hide-applied-tweaks() -> int;
+    callback toggle-gamemode(bool);
+    callback toggle-gfx-optimization(bool);
+    callback manage-service(string, string);
+    callback toggle-system-telemetry(bool);
+    callback generate-battery-report();
+    callback enable-classic-photo-viewer();
+    callback toggle-game-dvr(bool);
+    callback disable-hyperv();
+    callback toggle-system-updates(bool);
+    callback clean-update-cache();
+    callback refresh-processes();
+    callback kill-process(int);
+    callback add-blocked-app(string);
+    callback remove-blocked-app(string);
+    callback load-flatpaks();
+
+    // Внутреннее состояние UI
+    property <int> current-tab: 0;
+
+    GridLayout {
+        // Боковая панель навигации
+        Rectangle {
+            col: 0; row: 0;
+            width: 220px;
+            background: #0f0d14;
+            border-width: 1px;
+            border-color: #ffffff03;
+
+            VerticalLayout {
+                // Заменили padding на Rectangle, чтобы не было предупреждений
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 16px;
+                spacing: 4px;
+
+                Text {
+                    text: "MakuTweaker 4";
+                    color: #ffffff;
+                    font-size: 16px;
+                    // Вместо padding используем явные отступы внутри структуры
+                }
+
+                // Пустой блок для отступа снизу от заголовка
+                Rectangle { height: 12px; }
+
+                NavItem { text: "Быстрые настройки"; active: root.current-tab == 0; clicked => { root.current-tab = 0; } }
+                NavItem { text: "Персонализация"; active: root.current-tab == 1; clicked => { root.current-tab = 1; } }
+                NavItem { text: "Системные компоненты"; active: root.current-tab == 2; clicked => { root.current-tab = 2; } }
+                NavItem { text: "Диспетчер задач"; active: root.current-tab == 3; clicked => { root.current-tab = 3; root.refresh-processes(); } }
+                NavItem { text: "Пакетный менеджер"; active: root.current-tab == 8; clicked => { root.current-tab = 8; root.load-flatpaks(); } }
+                NavItem { text: "О системе"; active: root.current-tab == 7; clicked => { root.current-tab = 7; } }
+            }
+        }
+
+        // Основной контент
+        Rectangle {
+            col: 1; row: 0;
+            background: #0b090f;
+
+            // Вкладка "Диспетчер задач"
+            if (root.current-tab == 3) : VerticalLayout {
+                HorizontalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    padding-top: 28px;
+                    padding-bottom: 28px;
+                    alignment: space-between;
+                    Text { text: "Диспетчер процессов"; color: #ffffff; font-size: 20px; }
+                    Button { text: "Обновить"; clicked => { root.refresh-processes(); } }
+                }
+
+                ScrollView {
+                    VerticalLayout {
+                        padding-left: 28px; padding-right: 28px;
+                        spacing: 6px;
+                        for proc in root.process-list : Rectangle {
+                            background: #1b1926;
+                            border-radius: 6px;
+                            height: 44px;
+                            HorizontalLayout {
+                                padding-left: 16px; padding-right: 16px;
+                                alignment: space-between;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text { text: proc.name; color: #ffffff; font-size: 13px; }
+                                    Text { text: "PID: " + proc.pid; color: #757380; font-size: 11px; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 24px;
+                                    alignment: center;
+                                    Text { text: "ЦП: " + proc.cpu; color: #a3a1b0; font-size: 13px; }
+                                    Text { text: "Память: " + proc.memory; color: #a3a1b0; font-size: 13px; }
+                                    Button { text: "Завершить"; clicked => { root.kill-process(proc.pid); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Вкладка "Пакетный менеджер"
+            if (root.current-tab == 8) : VerticalLayout {
+                HorizontalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    padding-top: 28px;
+                    padding-bottom: 28px;
+                    alignment: space-between;
+                    Text { text: "Управление приложениями (Flatpak)"; color: #ffffff; font-size: 20px; }
+                }
+
+                ScrollView {
+                    VerticalLayout {
+                        padding-left: 28px; padding-right: 28px;
+                        spacing: 6px;
+                        for pkg in root.package-list : Rectangle {
+                            background: #1b1926;
+                            border-radius: 6px;
+                            height: 44px;
+                            HorizontalLayout {
+                                padding-left: 16px; padding-right: 16px;
+                                alignment: space-between;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text { text: pkg.name; color: #ffffff; font-size: 13px; }
+                                    Text { text: pkg.id; color: #757380; font-size: 11px; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 24px;
+                                    alignment: center;
+                                    Text { text: "Версия: " + pkg.version; color: #a3a1b0; font-size: 13px; }
+                                    Button { text: "Удалить"; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Вкладка "О системе"
+            if (root.current-tab == 7) : VerticalLayout {
+                HorizontalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    padding-top: 28px;
+                    padding-bottom: 28px;
+                    Text { text: "Спецификации устройства"; color: #ffffff; font-size: 20px; }
+                }
+
+                Rectangle {
+                    background: #1b1926;
+                    border-radius: 8px;
+                    // padding перенесён внутрь дочернего VerticalLayout
+
+                    VerticalLayout {
+                        padding-left: 20px;
+                        padding-right: 20px;
+                        padding-top: 20px;
+                        padding-bottom: 20px;
+                        spacing: 14px;
+                        Text { text: root.cpu-info; color: #ffffff; font-size: 14px; }
+                        Text { text: root.ram-summary; color: #ffffff; font-size: 14px; }
+                        Text { text: "Ядер: " + root.cpu-cores + " | Частота: " + root.cpu-freq; color: #ffffff; font-size: 14px; }
+                        Text { text: "Версия утилиты: " + root.about-version; color: #b0b0b8; font-size: 13px; }
+                    }
+                }
+            }
+
+            if (root.current-tab != 3 && root.current-tab != 8 && root.current-tab != 7) : VerticalLayout {
+                alignment: center;
+                Text { text: "Раздел переносится с C# под Linux"; color: #6e6c79; font-size: 15px; horizontal-alignment: center; }
+            }
+        }
+
+        // Нижний статус-бар
+        Rectangle {
+            col: 0; row: 1;
+            colspan: 2;
+            height: 32px;
+            background: #0f0d14;
+            border-width: 1px;
+            border-color: #ffffff03;
+
+            HorizontalLayout {
+                padding-left: 16px; padding-right: 16px;
+
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: "Поиск настроек и функций..."; color: #52505c; font-size: 11px; }
+                }
+
+                Rectangle { } // Распорка
+
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: "MakuTweaker 4.0 Pro"; color: #52505c; font-size: 11px; }
+                }
+            }
+        }
+    }
+}
