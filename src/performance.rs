@@ -1,60 +1,46 @@
 use std::fs;
-use std::process::Command;
+use std::path::Path;
 
-pub struct PerformanceHandler {}
+pub struct PerformanceHandler;
+
 impl PerformanceHandler {
     pub fn new() -> Self {
-        Self {}
-    }
-    pub fn toggle_gamemode(&self, enable: bool) { /* код */
-    }
-    pub fn toggle_gfx_env(&self, enable: bool) { /* код */
+        Self
     }
 
-    /// Аналог GetActiveScheme и ApplyThrottle из C#
-    /// Управляет максимальной частотой и лимитами процессора (в процентах)
-    pub fn apply_cpu_throttle(&self, percent: u32) -> Result<(), std::io::Error> {
-        if percent < 10 || percent > 100 {
-            return Ok(());
-        }
-
-        // 1. Способ через современный power-profiles-daemon (если доступен)
-        if percent <= 50 {
-            let _ = Command::new("powerprofilesctl")
-                .arg("set")
-                .arg("power-saver")
-                .output();
-        } else if percent <= 85 {
-            let _ = Command::new("powerprofilesctl")
-                .arg("set")
-                .arg("balanced")
-                .output();
-        } else {
-            let _ = Command::new("powerprofilesctl")
-                .arg("set")
-                .arg("performance")
-                .output();
-        }
-
-        // 2. Альтернативный прямой способ (требует root/sudo прав или настроенного polkit)
-        // Меняем max_perf_pct для intel_pstate (если процессор Intel Xeon)
-        let intel_pstate_path = "/sys/devices/system/cpu/intel_pstate/max_perf_pct";
-        if std::path::Path::new(intel_pstate_path).exists() {
-            // В продакшене запись потребует повышенных прав (pkexec или запуск через sudo)
-            let _ = fs::write(intel_pstate_path, format!("{}", percent));
-        }
-
-        Ok(())
+    pub fn toggle_gamemode(&self, _enable: bool) {
+        // Linux: использует gamemoderun или похожие инструменты
+        // Это обычно конфигурация в ~/.config или системных параметрах
     }
 
-    /// Возвращает текущий профиль или приблизительный процент троттлинга
-    pub fn get_current_throttle(&self) -> u32 {
-        let intel_pstate_path = "/sys/devices/system/cpu/intel_pstate/max_perf_pct";
-        if let Ok(content) = fs::read_to_string(intel_pstate_path) {
-            if let Ok(val) = content.trim().parse::<u32>() {
-                return val;
+    pub fn toggle_gfx_env(&self, _enable: bool) {
+        // Оптимизация GPU драйверов в GNOME/KDE через dconf
+    }
+
+    pub fn disable_animations(&self) -> bool {
+        // Отключаем анимации в графическом интерфейсе
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let config_path = Path::new(&home).join(".config/gtk-3.0/settings.ini");
+
+        if config_path.exists() {
+            if let Ok(content) = fs::read_to_string(&config_path) {
+                let updated = content.replace(
+                    "gtk-enable-animations=true",
+                    "gtk-enable-animations=false",
+                );
+                let _ = fs::write(&config_path, updated);
+                return true;
             }
         }
-        100 // По умолчанию без ограничений
+        false
+    }
+
+    pub fn optimize_memory(&self) -> bool {
+        // Очистка кэша памяти в Linux
+        let _ = std::process::Command::new("bash")
+            .arg("-c")
+            .arg("echo 3 > /proc/sys/vm/drop_caches")
+            .status();
+        true
     }
 }
