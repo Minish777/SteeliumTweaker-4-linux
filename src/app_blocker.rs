@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::Command;
 
 pub struct AppBlockerHandler {
@@ -40,7 +40,7 @@ impl AppBlockerHandler {
             lines.retain(|line| !yandex_hosts.iter().any(|&y_host| line.contains(y_host)));
         }
 
-        // Записываем обратно (требуются права root/sudo, поэтому приложение должно быть запущено должным образом или через pkexec)
+        // Записываем обратно (требуются права root/sudo, поэтому приложение должно быть запущено должным образом и[...]
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
