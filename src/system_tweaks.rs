@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 pub struct SystemTweaksHandler;
@@ -7,182 +9,46 @@ impl SystemTweaksHandler {
         Self
     }
 
-    /// Проверяет, запущен ли твикер на устройстве с батареей (ноутбук/планшет)
-    /// Аналог C# метода HasBattery() через консольный вызов WMIC / PowerShell
-    pub fn has_battery(&self) -> bool {
-        if let Ok(output) = Command::new("powershell")
-            .args(["-Command", "Get-CimInstance -ClassName Win32_Battery"])
-            .output()
-        {
-            // Если вывод не пустой, значит устройство управления питанием (батарея) найдено
-            return !output.stdout.is_empty();
-        }
-        false
-    }
-
-    /// Генерация отчета о состоянии батареи (Аналог вызова powercfg /batteryreport)
-    pub fn generate_battery_report(&self) -> bool {
-        if let Ok(home) = std::env::var("USERPROFILE") {
-            let report_path = format!(r"{}\Desktop\battery-report.html", home);
-            if let Ok(status) = Command::new("powercfg")
-                .args(["/batteryreport", "/output", &report_path])
-                .status()
-            {
-                return status.success();
-            }
-        }
-        false
-    }
-
-    /// Проверка: отключена ли телеметрия в данный момент
-    pub fn check_telemetry_disabled(&self) -> bool {
-        if let Ok(output) = Command::new("reg")
-            .args([
-                "query",
-                r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection",
-                "/v",
-                "AllowTelemetry",
-            ])
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // Если значение равно 0, значит телеметрия уже успешно заблокирована
-            return stdout.contains("0x0") || stdout.contains("0");
-        }
-        false
-    }
-
-    /// Включение или отключение телеметрии и слежки Windows (Аналог telemetry_Toggled)
     pub fn toggle_telemetry(&self, disable: bool) {
-        let val = if disable { "0" } else { "1" };
-        let no_gen_ticket = if disable { "1" } else { "0" };
-        let disable_engine = if disable { "1" } else { "0" };
+        let services = vec![
+            "systemd-journal-gateway",
+            "systemd-journal-remote",
+            "apport",
+            "ubuntu-report",
+        ];
 
-        // 1. Политики сбора данных (DataCollection)
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection",
-                "/v",
-                "AllowTelemetry",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                val,
-                "/f",
-            ])
-            .status();
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection",
-                "/v",
-                "MaxTelemetryAllowed",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                val,
-                "/f",
-            ])
-            .status();
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection",
-                "/v",
-                "DoNotShowFeedbackNotifications",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                if disable { "1" } else { "0" },
-                "/f",
-            ])
-            .status();
+        for service in services {
+            let action = if disable { "disable" } else { "enable" };
+            let _ = Command::new("systemctl")
+                .args(&[action, service])
+                .status();
+        }
 
-        // 2. Защита платформы программного обеспечения (Software Protection Platform)
-        let _ = Command::new("reg")
-            .args(["add", r"HKLM\SOFTWARE\Policies\Microsoft\Windows NT\CurrentVersion\Software Protection Platform", "/v", "NoGenTicket", "/t", "REG_DWORD", "/d", no_gen_ticket, "/f"])
-            .status();
+        // Отключаем данные о использовании в GNOME
+        if disable {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            let dconf_setting = "org.gnome.shell/disable-user-extensions-setting";
+            let _ = Command::new("dconf")
+                .args(&["write", dconf_setting, "true"])
+                .status();
+        }
+    }
 
-        // 3. Компоненты совместимости приложений (AppCompat)
-        let appcompat_path = r"HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat";
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                appcompat_path,
-                "/v",
-                "AITEnable",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                val,
-                "/f",
-            ])
-            .status();
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                appcompat_path,
-                "/v",
-                "AllowTelemetry",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                val,
-                "/f",
-            ])
-            .status();
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                appcompat_path,
-                "/v",
-                "DisableEngine",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                disable_engine,
-                "/f",
-            ])
-            .status();
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                appcompat_path,
-                "/v",
-                "DisableInventory",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                disable_engine,
-                "/f",
-            ])
-            .status();
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                appcompat_path,
-                "/v",
-                "DisablePCA",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                disable_engine,
-                "/f",
-            ])
-            .status();
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                appcompat_path,
-                "/v",
-                "DisableUAR",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                disable_engine,
-                "/f",
-            ])
-            .status();
+    pub fn has_battery(&self) -> bool {
+        Path::new("/sys/class/power_supply/BAT0").exists()
+            || Path::new("/sys/class/power_supply/BAT1").exists()
+    }
+
+    pub fn check_telemetry_disabled(&self) -> bool {
+        !Path::new("/var/log/ubuntu-report-stats").exists()
+    }
+
+    pub fn generate_battery_report(&self) {
+        if self.has_battery() {
+            let _ = Command::new("bash")
+                .arg("-c")
+                .arg("cat /sys/class/power_supply/BAT0/energy_full_design /sys/class/power_supply/BAT0/energy_full 2>/dev/null")
+                .status();
+        }
     }
 }
