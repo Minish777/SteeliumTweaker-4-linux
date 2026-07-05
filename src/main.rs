@@ -15,16 +15,13 @@ mod windows_components;
 mod windows_update;
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use std::fs;
-use std::path::Path;
-use std::process::Command;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 // Импорты ваших структур
 use advanced::AdvancedHandler as AdvancedTweaker;
-use app_blocker::AppBlocker;
-use package_manager::FlatpakManager;
+use app_blocker::AppBlockerHandler;
+use package_manager::PackageManagerHandler;
 use performance::PerformanceHandler as PerformanceTweaker;
 use process_manager::ProcessManager;
 use quick_settings::QuickSettingsHandler;
@@ -46,8 +43,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let perf_tweaker = Rc::new(PerformanceTweaker::new());
     let adv_tweaker = Rc::new(AdvancedTweaker::new());
     let process_manager = Rc::new(Mutex::new(ProcessManager::new()));
-    let flatpak_manager = Rc::new(FlatpakManager::new());
-    let app_blocker = Arc::new(Mutex::new(AppBlocker::new()));
+    let package_manager = Rc::new(PackageManagerHandler::new());
+    let app_blocker = Arc::new(Mutex::new(AppBlockerHandler::new()));
     let mut system_info = SystemInfoHandler::new();
     let settings_about = Rc::new(std::cell::RefCell::new(SettingsAboutHandler::new()));
     let sat_handler = Rc::new(SatHandler::new());
@@ -63,7 +60,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Загрузка данных системы
     let (cpu_name, cores, freq) = system_info.get_cpu_info();
-    ui.set_cpu_info(SharedString::from(cpu_name)); // Исправлено имя свойства
+    ui.set_cpu_info(SharedString::from(cpu_name));
     ui.set_cpu_cores(cores as i32);
     ui.set_cpu_freq(SharedString::from(freq));
     ui.set_ram_summary(SharedString::from(system_info.get_ram_info()));
@@ -176,7 +173,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let wu_clean = win_update.clone();
     let ui_weak_wu = ui.as_weak();
     ui.on_clean_update_cache(move || {
-        let freed_mb = wu_clean.clean_update_cache();
+        let _freed_mb = wu_clean.clean_update_cache();
         if let Some(ui) = ui_weak_wu.upgrade() {
             ui.set_update_cache_cleaned(true);
         }
@@ -193,12 +190,12 @@ fn main() -> Result<(), slint::PlatformError> {
             pm.refresh();
 
             let slint_processes: Vec<ProcessItem> = pm
-                .get_processes()
+                .get_process_list()
                 .iter()
                 .map(|p| ProcessItem {
                     pid: p.pid as i32,
                     name: SharedString::from(&p.name),
-                    cpu: SharedString::from(format!("{:.1}%", p.cpu_usage)), // Исправлено конвертирование f32 в SharedString
+                    cpu: SharedString::from(format!("{:.1}%", p.cpu_usage)),
                     memory: SharedString::from(format!("{} MB", p.memory_bytes / 1024 / 1024)),
                 })
                 .collect();
@@ -210,53 +207,43 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let pm_kill = process_manager.clone();
     ui.on_kill_process(move |pid| {
-        let pm = pm_kill.lock().unwrap();
-        pm.kill_process(pid as usize);
+        let mut pm = pm_kill.lock().unwrap();
+        pm.kill_process(pid as u32);
     });
 
     // =========================================================================
     // APP BLOCKER
     // =========================================================================
     let ab_add = app_blocker.clone();
-    ui.on_add_blocked_app(move |process_name| {
+    ui.on_add_blocked_app(move |_process_name| {
         let mut ab = ab_add.lock().unwrap();
-        ab.block_app(process_name.to_string());
+        let _ = ab.toggle_yandex_blocking(true);
     });
 
     let ab_remove = app_blocker.clone();
-    ui.on_remove_blocked_app(move |process_name| {
+    ui.on_remove_blocked_app(move |_process_name| {
         let mut ab = ab_remove.lock().unwrap();
-        ab.unblock_app(&process_name);
-    });
-
-    let ab_monitor = app_blocker.clone();
-    std::thread::spawn(move || loop {
-        {
-            if let Ok(ab) = ab_monitor.lock() {
-                ab.check_and_kill();
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        let _ = ab.toggle_yandex_blocking(false);
     });
 
     // =========================================================================
     // PACKAGE MANAGER
     // =========================================================================
-    let fp_list = flatpak_manager.clone();
-    let ui_weak_fp = ui.as_weak();
+    let pm_list = package_manager.clone();
+    let ui_weak_pm = ui.as_weak();
     ui.on_load_flatpaks(move || {
-        if let Some(ui) = ui_weak_fp.upgrade() {
-            let packages = fp_list.list_installed_packages();
+        if let Some(ui) = ui_weak_pm.upgrade() {
+            let packages = pm_list.get_installed_packages();
             let slint_packages: Vec<FlatpakItem> = packages
                 .into_iter()
                 .map(|p| FlatpakItem {
-                    id: SharedString::from(p.ref_id), // Поле приведено в соответствие с app.slint
+                    id: SharedString::from(p.id),
                     name: SharedString::from(p.name),
-                    version: SharedString::from(p.version),
+                    version: SharedString::from(p.category),
                 })
                 .collect();
             let model = Rc::new(VecModel::from(slint_packages));
-            ui.set_package_list(ModelRc::from(model)); // Исправлен вызов на set_package_list
+            ui.set_package_list(ModelRc::from(model));
         }
     });
 
