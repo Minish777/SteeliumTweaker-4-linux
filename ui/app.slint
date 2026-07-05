@@ -5,40 +5,68 @@ component NavItem inherits Rectangle {
     in property <bool> active;
     callback clicked;
 
-    height: 38px;
-    background: active ? #ffffff0c : transparent;
-    border-radius: 5px;
-
-    TouchArea { clicked => { root.clicked(); } }
+    height: 40px;
+    background: active ? #2a2838 : transparent;
+    border-radius: 4px;
+    
+    TouchArea { 
+        clicked => { root.clicked(); }
+    }
 
     Text {
-        x: 16px;
+        x: 12px;
         text: root.text;
-        color: active ? #ffffff : #b0b0b8;
+        color: active ? #e0e0e8 : #9090a0;
         font-size: 13px;
+        font-weight: active ? 600 : 400;
         vertical-alignment: center;
     }
 }
 
-component TweakCard inherits Rectangle {
+component TweakToggle inherits Rectangle {
     in property <string> title;
     in property <string> description;
     in-out property <bool> checked;
     callback toggled(bool);
 
-    background: #1b1926;
+    background: #15131a;
     border-radius: 6px;
     border-width: 1px;
-    border-color: #ffffff05;
-    height: 54px;
-
+    border-color: #2a2838;
+    height: 60px;
+    
     HorizontalLayout {
-        padding-left: 16px; padding-right: 16px;
+        padding-left: 16px;
+        padding-right: 16px;
+        alignment: space-between;
 
         VerticalLayout {
             alignment: center;
-            Text { text: root.title; color: #ffffff; font-size: 13px; }
-            if (root.description != "") : Text { text: root.description; color: #757380; font-size: 11px; }
+            Text { 
+                text: root.title; 
+                color: #e0e0e8; 
+                font-size: 13px;
+                font-weight: 500;
+            }
+            if (root.description != "") : Text { 
+                text: root.description; 
+                color: #7a7a88; 
+                font-size: 11px; 
+            }
+        }
+
+        Rectangle {
+            width: 44px;
+            height: 24px;
+            background: root.checked ? #6366f1 : #3a3848;
+            border-radius: 12px;
+            
+            TouchArea {
+                clicked => {
+                    root.checked = !root.checked;
+                    root.toggled(root.checked);
+                }
+            }
         }
     }
 }
@@ -58,25 +86,17 @@ export struct FlatpakItem {
 
 export component AppWindow inherits Window {
     title: "MakuTweaker 4 (Linux)";
-    width: 960px;
-    height: 600px;
-    background: #0b090f;
-
-    // ==========================================
-    // СВОЙСТВА И КОЛБЭКИ ДЛЯ СВЯЗИ С RUST (src/main.rs)
-    // ==========================================
-
-    // Информация о системе (Rust вызывает set_cpu_info, set_ram_summary и т.д.)
+    width: 1024px;
+    height: 720px;
+    background: #0a0810;
+    
     in-out property <string> cpu-info: "";
     in-out property <int> cpu-cores: 0;
     in-out property <string> cpu-freq: "";
     in-out property <string> ram-summary: "";
-
-    // Информация о программе ("О программе")
-    in-out property <string> about-version: "1.0.0";
+    in-out property <string> about-version: "4.0.0";
     in-out property <string> about-credits: "";
-
-    // Состояние твиков
+    
     in-out property <bool> winr-alias-active: false;
     in-out property <bool> has-battery: false;
     in-out property <bool> telemetry-disabled: false;
@@ -85,12 +105,10 @@ export component AppWindow inherits Window {
     in-out property <bool> updates-blocked: false;
     in-out property <int> visible-tweaks-count: 0;
     in-out property <bool> update-cache-cleaned: false;
-
-    // Списки для Диспетчера задач и Flatpak
+    
     in-out property <[ProcessItem]> process-list: [];
     in-out property <[FlatpakItem]> package-list: [];
-
-    // Колбэки (Rust подписывается через ui.on_...)
+    
     callback apply-makuos-preset();
     callback hide-applied-tweaks() -> int;
     callback toggle-gamemode(bool);
@@ -108,84 +126,215 @@ export component AppWindow inherits Window {
     callback add-blocked-app(string);
     callback remove-blocked-app(string);
     callback load-flatpaks();
-
-    // Внутреннее состояние UI
+    
     property <int> current-tab: 0;
+    property <bool> is-loading: false;
 
     GridLayout {
-        // Боковая панель навигации
+        // Левая панель навигации
         Rectangle {
-            col: 0; row: 0;
-            width: 220px;
+            col: 0;
+            row: 0;
+            row-span: 2;
+            width: 240px;
             background: #0f0d14;
             border-width: 1px;
-            border-color: #ffffff03;
+            border-color: #1a1820;
 
             VerticalLayout {
-                // Заменили padding на Rectangle, чтобы не было предупреждений
-                padding-left: 12px;
-                padding-right: 12px;
-                padding-top: 16px;
-                spacing: 4px;
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 20px;
+                spacing: 2px;
 
                 Text {
                     text: "MakuTweaker 4";
-                    color: #ffffff;
-                    font-size: 16px;
-                    // Вместо padding используем явные отступы внутри структуры
+                    color: #e0e0e8;
+                    font-size: 18px;
+                    font-weight: 700;
+                    margin-bottom: 20px;
                 }
 
-                // Пустой блок для отступа снизу от заголовка
-                Rectangle { height: 12px; }
+                NavItem { 
+                    text: "⚡ Быстрые настройки"; 
+                    active: root.current-tab == 0; 
+                    clicked => { root.current-tab = 0; } 
+                }
+                NavItem { 
+                    text: "🎨 Персонализация"; 
+                    active: root.current-tab == 1; 
+                    clicked => { root.current-tab = 1; } 
+                }
+                NavItem { 
+                    text: "⚙️ Система"; 
+                    active: root.current-tab == 2; 
+                    clicked => { root.current-tab = 2; } 
+                }
+                NavItem { 
+                    text: "📊 Диспетчер задач"; 
+                    active: root.current-tab == 3; 
+                    clicked => { root.current-tab = 3; root.refresh-processes(); } 
+                }
+                NavItem { 
+                    text: "📦 Приложения"; 
+                    active: root.current-tab == 4; 
+                    clicked => { root.current-tab = 4; root.load-flatpaks(); } 
+                }
+                NavItem { 
+                    text: "ℹ️ О системе"; 
+                    active: root.current-tab == 5; 
+                    clicked => { root.current-tab = 5; } 
+                }
 
-                NavItem { text: "Быстрые настройки"; active: root.current-tab == 0; clicked => { root.current-tab = 0; } }
-                NavItem { text: "Персонализация"; active: root.current-tab == 1; clicked => { root.current-tab = 1; } }
-                NavItem { text: "Системные компоненты"; active: root.current-tab == 2; clicked => { root.current-tab = 2; } }
-                NavItem { text: "Диспетчер задач"; active: root.current-tab == 3; clicked => { root.current-tab = 3; root.refresh-processes(); } }
-                NavItem { text: "Пакетный менеджер"; active: root.current-tab == 8; clicked => { root.current-tab = 8; root.load-flatpaks(); } }
-                NavItem { text: "О системе"; active: root.current-tab == 7; clicked => { root.current-tab = 7; } }
+                Rectangle { }
             }
         }
 
         // Основной контент
         Rectangle {
-            col: 1; row: 0;
-            background: #0b090f;
+            col: 1;
+            row: 0;
+            background: #0a0810;
 
-            // Вкладка "Диспетчер задач"
-            if (root.current-tab == 3) : VerticalLayout {
-                HorizontalLayout {
-                    padding-left: 28px;
-                    padding-right: 28px;
-                    padding-top: 28px;
-                    padding-bottom: 28px;
-                    alignment: space-between;
-                    Text { text: "Диспетчер процессов"; color: #ffffff; font-size: 20px; }
-                    Button { text: "Обновить"; clicked => { root.refresh-processes(); } }
+            // Вкладка "Быстрые настройки"
+            if (root.current-tab == 0) : VerticalLayout {
+                padding-left: 28px;
+                padding-right: 28px;
+                padding-top: 28px;
+
+                Text { 
+                    text: "Быстрые настройки"; 
+                    color: #e0e0e8; 
+                    font-size: 24px;
+                    font-weight: 700;
                 }
+                
+                Rectangle { height: 16px; }
 
                 ScrollView {
                     VerticalLayout {
-                        padding-left: 28px; padding-right: 28px;
-                        spacing: 6px;
-                        for proc in root.process-list : Rectangle {
-                            background: #1b1926;
-                            border-radius: 6px;
+                        spacing: 12px;
+                        
+                        TweakToggle {
+                            title: "Отключить телеметрию";
+                            description: "Улучшает производительность и приватность";
+                            checked <=> root.telemetry-disabled;
+                            toggled(val) => { root.toggle-system-telemetry(val); }
+                        }
+
+                        TweakToggle {
+                            title: "Оптимизация памяти";
+                            description: "Автоматическая очистка кэша";
+                            checked: false;
+                            toggled(_) => { }
+                        }
+
+                        TweakToggle {
+                            title: "Отключить обновления";
+                            description: "Предотвращает автоматические обновления";
+                            checked <=> root.updates-blocked;
+                            toggled(val) => { root.toggle-system-updates(val); }
+                        }
+
+                        Button {
+                            text: "Применить все оптимизации";
+                            clicked => { root.apply-makuos-preset(); }
                             height: 44px;
+                        }
+                    }
+                }
+            }
+
+            // Вкладка "Диспетчер задач"
+            if (root.current-tab == 3) : VerticalLayout {
+                padding: 28px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text { 
+                        text: "Управление процессами"; 
+                        color: #e0e0e8; 
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+                    Button { 
+                        text: "🔄 Обновить"; 
+                        clicked => { root.refresh-processes(); }
+                        width: 120px;
+                    }
+                }
+
+                Rectangle { height: 16px; }
+
+                ScrollView {
+                    VerticalLayout {
+                        spacing: 8px;
+                        for proc in root.process-list : Rectangle {
+                            background: #15131a;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: #2a2838;
+                            height: 56px;
+                            
                             HorizontalLayout {
-                                padding-left: 16px; padding-right: 16px;
+                                padding-left: 16px;
+                                padding-right: 16px;
                                 alignment: space-between;
+
                                 VerticalLayout {
                                     alignment: center;
-                                    Text { text: proc.name; color: #ffffff; font-size: 13px; }
-                                    Text { text: "PID: " + proc.pid; color: #757380; font-size: 11px; }
+                                    Text { 
+                                        text: proc.name; 
+                                        color: #e0e0e8; 
+                                        font-size: 13px;
+                                        font-weight: 500;
+                                    }
+                                    Text { 
+                                        text: "PID: " + proc.pid; 
+                                        color: #7a7a88; 
+                                        font-size: 11px; 
+                                    }
                                 }
+
                                 HorizontalLayout {
-                                    spacing: 24px;
+                                    spacing: 16px;
                                     alignment: center;
-                                    Text { text: "ЦП: " + proc.cpu; color: #a3a1b0; font-size: 13px; }
-                                    Text { text: "Память: " + proc.memory; color: #a3a1b0; font-size: 13px; }
-                                    Button { text: "Завершить"; clicked => { root.kill-process(proc.pid); } }
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text { 
+                                            text: "ЦП"; 
+                                            color: #7a7a88; 
+                                            font-size: 10px; 
+                                        }
+                                        Text { 
+                                            text: proc.cpu; 
+                                            color: #e0e0e8; 
+                                            font-size: 12px;
+                                            font-weight: 500;
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text { 
+                                            text: "ОЗУ"; 
+                                            color: #7a7a88; 
+                                            font-size: 10px; 
+                                        }
+                                        Text { 
+                                            text: proc.memory; 
+                                            color: #e0e0e8; 
+                                            font-size: 12px;
+                                            font-weight: 500;
+                                        }
+                                    }
+
+                                    Button { 
+                                        text: "✕"; 
+                                        clicked => { root.kill-process(proc.pid); }
+                                        width: 40px;
+                                    }
                                 }
                             }
                         }
@@ -193,38 +342,61 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Вкладка "Пакетный менеджер"
-            if (root.current-tab == 8) : VerticalLayout {
-                HorizontalLayout {
-                    padding-left: 28px;
-                    padding-right: 28px;
-                    padding-top: 28px;
-                    padding-bottom: 28px;
-                    alignment: space-between;
-                    Text { text: "Управление приложениями (Flatpak)"; color: #ffffff; font-size: 20px; }
+            // Вкладка "Приложения"
+            if (root.current-tab == 4) : VerticalLayout {
+                padding: 28px;
+
+                Text { 
+                    text: "Установленные приложения"; 
+                    color: #e0e0e8; 
+                    font-size: 24px;
+                    font-weight: 700;
                 }
+
+                Rectangle { height: 16px; }
 
                 ScrollView {
                     VerticalLayout {
-                        padding-left: 28px; padding-right: 28px;
-                        spacing: 6px;
+                        spacing: 8px;
                         for pkg in root.package-list : Rectangle {
-                            background: #1b1926;
+                            background: #15131a;
                             border-radius: 6px;
-                            height: 44px;
+                            border-width: 1px;
+                            border-color: #2a2838;
+                            height: 56px;
+
                             HorizontalLayout {
-                                padding-left: 16px; padding-right: 16px;
+                                padding-left: 16px;
+                                padding-right: 16px;
                                 alignment: space-between;
+
                                 VerticalLayout {
                                     alignment: center;
-                                    Text { text: pkg.name; color: #ffffff; font-size: 13px; }
-                                    Text { text: pkg.id; color: #757380; font-size: 11px; }
+                                    Text { 
+                                        text: pkg.name; 
+                                        color: #e0e0e8; 
+                                        font-size: 13px;
+                                        font-weight: 500;
+                                    }
+                                    Text { 
+                                        text: pkg.id; 
+                                        color: #7a7a88; 
+                                        font-size: 10px; 
+                                    }
                                 }
+
                                 HorizontalLayout {
-                                    spacing: 24px;
+                                    spacing: 12px;
                                     alignment: center;
-                                    Text { text: "Версия: " + pkg.version; color: #a3a1b0; font-size: 13px; }
-                                    Button { text: "Удалить"; }
+                                    Text { 
+                                        text: pkg.version; 
+                                        color: #7a7a88; 
+                                        font-size: 11px; 
+                                    }
+                                    Button { 
+                                        text: "Удалить"; 
+                                        width: 80px;
+                                    }
                                 }
                             }
                         }
@@ -233,62 +405,155 @@ export component AppWindow inherits Window {
             }
 
             // Вкладка "О системе"
-            if (root.current-tab == 7) : VerticalLayout {
-                HorizontalLayout {
-                    padding-left: 28px;
-                    padding-right: 28px;
-                    padding-top: 28px;
-                    padding-bottom: 28px;
-                    Text { text: "Спецификации устройства"; color: #ffffff; font-size: 20px; }
+            if (root.current-tab == 5) : VerticalLayout {
+                padding: 28px;
+                alignment: start;
+
+                Text { 
+                    text: "Информация о системе"; 
+                    color: #e0e0e8; 
+                    font-size: 24px;
+                    font-weight: 700;
                 }
 
+                Rectangle { height: 24px; }
+
                 Rectangle {
-                    background: #1b1926;
+                    background: #15131a;
                     border-radius: 8px;
-                    // padding перенесён внутрь дочернего VerticalLayout
+                    border-width: 1px;
+                    border-color: #2a2838;
+                    height: 280px;
 
                     VerticalLayout {
-                        padding-left: 20px;
-                        padding-right: 20px;
-                        padding-top: 20px;
-                        padding-bottom: 20px;
-                        spacing: 14px;
-                        Text { text: root.cpu-info; color: #ffffff; font-size: 14px; }
-                        Text { text: root.ram-summary; color: #ffffff; font-size: 14px; }
-                        Text { text: "Ядер: " + root.cpu-cores + " | Частота: " + root.cpu-freq; color: #ffffff; font-size: 14px; }
-                        Text { text: "Версия утилиты: " + root.about-version; color: #b0b0b8; font-size: 13px; }
+                        padding: 24px;
+                        spacing: 16px;
+
+                        HorizontalLayout {
+                            Text { 
+                                text: "ЦПУ:"; 
+                                color: #7a7a88; 
+                                font-size: 13px;
+                                font-weight: 500;
+                                width: 100px;
+                            }
+                            Text { 
+                                text: root.cpu-info; 
+                                color: #e0e0e8; 
+                                font-size: 13px; 
+                            }
+                        }
+
+                        HorizontalLayout {
+                            Text { 
+                                text: "ОЗУ:"; 
+                                color: #7a7a88; 
+                                font-size: 13px;
+                                font-weight: 500;
+                                width: 100px;
+                            }
+                            Text { 
+                                text: root.ram-summary; 
+                                color: #e0e0e8; 
+                                font-size: 13px; 
+                            }
+                        }
+
+                        HorizontalLayout {
+                            Text { 
+                                text: "Ядер:"; 
+                                color: #7a7a88; 
+                                font-size: 13px;
+                                font-weight: 500;
+                                width: 100px;
+                            }
+                            Text { 
+                                text: root.cpu-cores; 
+                                color: #e0e0e8; 
+                                font-size: 13px; 
+                            }
+                        }
+
+                        HorizontalLayout {
+                            Text { 
+                                text: "Частота:"; 
+                                color: #7a7a88; 
+                                font-size: 13px;
+                                font-weight: 500;
+                                width: 100px;
+                            }
+                            Text { 
+                                text: root.cpu-freq; 
+                                color: #e0e0e8; 
+                                font-size: 13px; 
+                            }
+                        }
+
+                        HorizontalLayout {
+                            Text { 
+                                text: "Версия:"; 
+                                color: #7a7a88; 
+                                font-size: 13px;
+                                font-weight: 500;
+                                width: 100px;
+                            }
+                            Text { 
+                                text: root.about-version; 
+                                color: #e0e0e8; 
+                                font-size: 13px; 
+                            }
+                        }
                     }
                 }
             }
 
-            if (root.current-tab != 3 && root.current-tab != 8 && root.current-tab != 7) : VerticalLayout {
+            // Заглушка для остальных вкладок
+            if (root.current-tab != 0 && root.current-tab != 3 && root.current-tab != 4 && root.current-tab != 5) : VerticalLayout {
                 alignment: center;
-                Text { text: "Раздел переносится с C# под Linux"; color: #6e6c79; font-size: 15px; horizontal-alignment: center; }
+                padding: 40px;
+                Text { 
+                    text: "Раздел скоро появится"; 
+                    color: #5a5a68; 
+                    font-size: 16px; 
+                    horizontal-alignment: center; 
+                }
             }
         }
 
-        // Нижний статус-бар
+        // Статус-бар
         Rectangle {
-            col: 0; row: 1;
+            col: 0;
+            row: 1;
             colspan: 2;
-            height: 32px;
+            height: 48px;
             background: #0f0d14;
             border-width: 1px;
-            border-color: #ffffff03;
+            border-color: #1a1820;
 
             HorizontalLayout {
-                padding-left: 16px; padding-right: 16px;
+                padding-left: 28px;
+                padding-right: 28px;
 
-                VerticalLayout {
-                    alignment: center;
-                    Text { text: "Поиск настроек и функций..."; color: #52505c; font-size: 11px; }
+                Text { 
+                    text: "MakuTweaker 4 | Оптимизация Linux"; 
+                    color: #5a5a68; 
+                    font-size: 12px; 
                 }
 
-                Rectangle { } // Распорка
+                Rectangle { }
 
-                VerticalLayout {
-                    alignment: center;
-                    Text { text: "MakuTweaker 4.0 Pro"; color: #52505c; font-size: 11px; }
+                if (root.is-loading) : Text {
+                    text: "⏳ Загрузка...";
+                    color: #6366f1;
+                    font-size: 12px;
+                    font-weight: 500;
+                }
+
+                if (!root.is-loading) : Text { 
+                    text: "✓ Готово"; 
+                    color: #4ade80; 
+                    font-size: 12px;
+                    font-weight: 500;
                 }
             }
         }
